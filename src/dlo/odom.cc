@@ -34,7 +34,9 @@ dlo::OdomNode::OdomNode(ros::NodeHandle node_handle) : nh(node_handle) {
   this->odom_pub = this->nh.advertise<nav_msgs::Odometry>("odom", 1);
   this->pose_pub = this->nh.advertise<geometry_msgs::PoseStamped>("pose", 1);
   this->kf_pub = this->nh.advertise<nav_msgs::Odometry>("kfs", 1, true);
-  this->keyframe_pub = this->nh.advertise<sensor_msgs::PointCloud2>("keyframe", 1, true);
+  // this->keyframe_pub = this->nh.advertise<sensor_msgs::PointCloud2>("keyframe", 1, true);
+  this->global_map_pub = this->nh.advertise<sensor_msgs::PointCloud2>("global_map", 1, true);
+  this->curr_scan_pub = this->nh.advertise<sensor_msgs::PointCloud2>("curr_scan", 1, true);
 
   this->odom.pose.pose.position.x = 0.;
   this->odom.pose.pose.position.y = 0.;
@@ -88,6 +90,8 @@ dlo::OdomNode::OdomNode(ros::NodeHandle node_handle) : nh(node_handle) {
   this->submap_cloud = pcl::PointCloud<PointType>::Ptr (new pcl::PointCloud<PointType>);
   this->submap_hasChanged = true;
   this->submap_kf_idx_prev.clear();
+
+  this->global_map_cloud = pcl::PointCloud<PointType>::Ptr (new pcl::PointCloud<PointType>);
 
   this->source_cloud = nullptr;
   this->target_cloud = nullptr;
@@ -260,6 +264,9 @@ void dlo::OdomNode::getParams() {
   ros::param::param<double>("~dlo/odomNode/gicp/s2m/euclideanFitnessEpsilon", this->gicps2m_euclidean_fitness_ep_, -std::numeric_limits<double>::max());
   ros::param::param<int>("~dlo/odomNode/gicp/s2m/ransac/iterations", this->gicps2m_ransac_iter_, 0);
   ros::param::param<double>("~dlo/odomNode/gicp/s2m/ransac/outlierRejectionThresh", this->gicps2m_ransac_inlier_thresh_, 0.05);
+
+  //Global Map
+  ros::param::param<std::string>("~dlo/map/mapPath", this->map_path, "/home/wmz/dlo_map.pcd");
 
 }
 
@@ -439,6 +446,21 @@ void dlo::OdomNode::publishKeyframe() {
 
 }
 
+void dlo::OdomNode::publishGlobalMap() {
+
+    sensor_msgs::PointCloud2 global_map_cloud_ros;
+    pcl::toROSMsg(*this->global_map_cloud, global_map_cloud_ros);
+    global_map_cloud_ros.header.stamp = this->scan_stamp;
+    global_map_cloud_ros.header.frame_id = this->odom_frame;
+    this->global_map_pub.publish(global_map_cloud_ros);
+
+    sensor_msgs::PointCloud2 curr_scan_cloud_ros;
+    pcl::toROSMsg(*this->current_scan, curr_scan_cloud_ros);
+    curr_scan_cloud_ros.header.stamp = this->scan_stamp;
+    curr_scan_cloud_ros.header.frame_id = this->child_frame;
+    this->curr_scan_pub.publish(curr_scan_cloud_ros);
+
+}
 
 /**
  * Preprocessing
@@ -483,30 +505,34 @@ void dlo::OdomNode::initializeInputTarget() {
   this->gicp_s2s.setInputTarget(this->target_cloud);
   this->gicp_s2s.calculateTargetCovariances();
 
-  // initialize keyframes
-  pcl::PointCloud<PointType>::Ptr first_keyframe (new pcl::PointCloud<PointType>);
-  pcl::transformPointCloud (*this->target_cloud, *first_keyframe, this->T);
+  // // initialize keyframes
+  // pcl::PointCloud<PointType>::Ptr first_keyframe (new pcl::PointCloud<PointType>);
+  // pcl::transformPointCloud (*this->target_cloud, *first_keyframe, this->T);
 
-  // voxelization for submap
-  if (this->vf_submap_use_) {
-    this->vf_submap.setInputCloud(first_keyframe);
-    this->vf_submap.filter(*first_keyframe);
-  }
+  // // voxelization for submap
+  // if (this->vf_submap_use_) {
+  //   this->vf_submap.setInputCloud(first_keyframe);
+  //   this->vf_submap.filter(*first_keyframe);
+  // }
 
-  // keep history of keyframes
-  this->keyframes.push_back(std::make_pair(std::make_pair(this->pose, this->rotq), first_keyframe));
-  *this->keyframes_cloud += *first_keyframe;
-  *this->keyframe_cloud = *first_keyframe;
+  // // keep history of keyframes
+  // this->keyframes.push_back(std::make_pair(std::make_pair(this->pose, this->rotq), first_keyframe));
+  // *this->keyframes_cloud += *first_keyframe;
+  // *this->keyframe_cloud = *first_keyframe;
 
-  // compute kdtree and keyframe normals (use gicp_s2s input source as temporary storage because it will be overwritten by setInputSources())
-  this->gicp_s2s.setInputSource(this->keyframe_cloud);
-  this->gicp_s2s.calculateSourceCovariances();
-  this->keyframe_normals.push_back(this->gicp_s2s.getSourceCovariances());
+  // // compute kdtree and keyframe normals (use gicp_s2s input source as temporary storage because it will be overwritten by setInputSources())
+  // this->gicp_s2s.setInputSource(this->keyframes_cloud);
+  // this->gicp_s2s.calculateSourceCovariances();
+  // this->keyframes_normals.push_back(this->gicp_s2s.getSourceCovariances());
 
-  this->publish_keyframe_thread = std::thread( &dlo::OdomNode::publishKeyframe, this );
-  this->publish_keyframe_thread.detach();
+  // this->publish_keyframe_thread = std::thread( &dlo::OdomNode::publishKeyframe, this );
+  // this->publish_keyframe_thread.detach();
 
-  ++this->num_keyframes;
+  // ++this->num_keyframes;
+
+  // this->gicp_s2s.setInputSource(this->global_map_cloud);
+  // this->gicp_s2s.calculateSourceCovariances();
+  // this->global_map_normals.push_back(this->gicp_s2s.getSourceCovariances());
 
 }
 
@@ -610,12 +636,16 @@ void dlo::OdomNode::initializeDLO() {
     this->T_s2s.block(0,3,3,1) = this->pose;
     this->T_s2s_prev.block(0,3,3,1) = this->pose;
     this->origin = this->initial_position_;
-
     // set known orientation
     this->rotq = this->initial_orientation_;
     this->T.block(0,0,3,3) = this->rotq.toRotationMatrix();
     this->T_s2s.block(0,0,3,3) = this->rotq.toRotationMatrix();
     this->T_s2s_prev.block(0,0,3,3) = this->rotq.toRotationMatrix();
+
+    std::cout << "loading pcd file..." << map_path << std::endl;
+
+    pcl::io::loadPCDFile(this->map_path, *(this->global_map_cloud));
+    std::cout << "load pcd file successfully map_path: " << this->map_path << std::endl;
 
     std::cout << "done" << std::endl << std::endl;
   }
@@ -679,7 +709,7 @@ void dlo::OdomNode::icpCB(const sensor_msgs::PointCloud2ConstPtr& pc) {
   this->getNextPose();
 
   // Update current keyframe poses and map
-  this->updateKeyframes();
+  // this->updateKeyframes();
 
   // Update trajectory
   this->trajectory.push_back( std::make_pair(this->pose, this->rotq) );
@@ -693,6 +723,9 @@ void dlo::OdomNode::icpCB(const sensor_msgs::PointCloud2ConstPtr& pc) {
   // Publish stuff to ROS
   this->publish_thread = std::thread( &dlo::OdomNode::publishToROS, this );
   this->publish_thread.detach();
+
+  this->publish_global_map_thread = std::thread( &dlo::OdomNode::publishGlobalMap, this );
+  this->publish_global_map_thread.detach();
 
   // Debug statements and publish custom DLO message
   this->debug_thread = std::thread( &dlo::OdomNode::debug, this );
@@ -826,16 +859,19 @@ void dlo::OdomNode::getNextPose() {
   //
 
   // Get current global submap
-  this->getSubmapKeyframes();
+  // this->getSubmapKeyframes();
 
-  if (this->submap_hasChanged) {
+  // if (this->submap_hasChanged) {
 
-    // Set the current global submap as the target cloud
-    this->gicp.setInputTarget(this->submap_cloud);
+  //   // Set the current global submap as the target cloud
+  //   this->gicp.setInputTarget(this->submap_cloud);
 
-    // Set target cloud's normals as submap normals
-    this->gicp.setTargetCovariances( this->submap_normals );
-  }
+  //   // Set target cloud's normals as submap normals
+    // this->gicp.setTargetCovariances( this->submap_normals );
+  // }
+
+  this->gicp.setInputTarget(this->global_map_cloud);
+  this->gicp.setTargetCovariances(this->global_map_normals);
 
   // Align with current submap with global S2S transformation as initial guess
   this->gicp.align(*aligned, this->T_s2s);

@@ -9,10 +9,13 @@
 
 dlo:
 
+  map:
+    mapPath: "/home/wmz/dlo_map.pcd"
+
   odomNode:
 
     initialPose:
-      use: false
+      use: true
       position:
         x: 0.0
         y: 0.0

@@ -36,6 +36,8 @@ private:
   void publishTransform();
   void publishKeyframe();
 
+  void publishGlobalMap();
+
   void preprocessPoints();
   void initializeInputTarget();
   void setInputSources();
@@ -76,6 +78,9 @@ private:
   ros::Publisher keyframe_pub;
   ros::Publisher kf_pub;
 
+  ros::Publisher global_map_pub;
+  ros::Publisher curr_scan_pub;
+
   Eigen::Vector3f origin;
   std::vector<std::pair<Eigen::Vector3f, Eigen::Quaternionf>> trajectory;
   std::vector<std::pair<std::pair<Eigen::Vector3f, Eigen::Quaternionf>, pcl::PointCloud<PointType>::Ptr>> keyframes;
@@ -94,6 +99,10 @@ private:
   pcl::PointCloud<PointType>::Ptr keyframes_cloud;
   pcl::PointCloud<PointType>::Ptr keyframe_cloud;
   int num_keyframes;
+
+  pcl::PointCloud<PointType>::Ptr global_map_cloud;
+  std::vector<Eigen::Matrix4d, Eigen::aligned_allocator<Eigen::Matrix4d>> global_map_normals;
+  std::string map_path;
 
   pcl::ConvexHull<PointType> convex_hull;
   pcl::ConcaveHull<PointType> concave_hull;
@@ -185,6 +194,8 @@ private:
   std::thread publish_keyframe_thread;
   std::thread metrics_thread;
   std::thread debug_thread;
+
+  std::thread publish_global_map_thread;
 
   std::mutex mtx_imu;
 

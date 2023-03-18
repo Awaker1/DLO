@@ -41,6 +41,8 @@
 #include <pcl_ros/transforms.h>
 #include <tf2_ros/transform_broadcaster.h>
 
+#include <pcl/io/pcd_io.h>
+
 #include <geometry_msgs/PoseStamped.h>
 #include <nav_msgs/Odometry.h>
 #include <sensor_msgs/CameraInfo.h>

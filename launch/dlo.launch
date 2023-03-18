@@ -12,8 +12,8 @@
   <arg name="robot_namespace" default="robot"/>
   <arg name="rviz" default="true"/>
 
-  <arg name="pointcloud_topic" default="lidar"/>
-  <arg name="imu_topic" default="imu"/>
+  <arg name="pointcloud_topic" default="/livox/lidar"/>
+  <arg name="imu_topic" default="/livox/imu"/>
 
   <!-- DLO Odometry Node -->
   <node ns="$(arg robot_namespace)" name="dlo_odom" pkg="direct_lidar_odometry" type="dlo_odom_node" output="screen" clear_params="true">
@@ -35,18 +35,18 @@
   </node>
 
   <!-- DLO Mapping Node -->
-  <node ns="$(arg robot_namespace)" name="dlo_map" pkg="direct_lidar_odometry" type="dlo_map_node" output="screen" clear_params="true">
+  <!-- <node ns="$(arg robot_namespace)" name="dlo_map" pkg="direct_lidar_odometry" type="dlo_map_node" output="screen" clear_params="true"> -->
 
     <!-- Load parameters -->
-    <rosparam file="$(find direct_lidar_odometry)/cfg/dlo.yaml" command="load"/>
+    <!-- <rosparam file="$(find direct_lidar_odometry)/cfg/dlo.yaml" command="load"/> -->
 
     <!-- Subscriptions -->
-    <remap from="~keyframes" to="dlo/odom_node/pointcloud/keyframe"/>
+    <!-- <remap from="~keyframes" to="dlo/odom_node/pointcloud/keyframe"/> -->
 
     <!-- Publications -->
-    <remap from="~map" to="dlo/map_node/map"/>
+    <!-- <remap from="~map" to="dlo/map_node/map"/> -->
 
-  </node>
+  <!-- </node> -->
 
   <!-- RViz -->
   <node pkg="rviz" type="rviz" name="dlo_rviz" args="-d $(find direct_lidar_odometry)/launch/dlo.rviz"/>
